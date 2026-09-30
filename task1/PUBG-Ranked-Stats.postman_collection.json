@@ -1,0 +1,186 @@
+{
+  "info": {
+    "name": "PUBG · Ranked Stats (current season)",
+    "description": "Gets ranked stats of one player for the current season.\n\nHow to use:\n1. Import this collection and PUBG.postman_environment.json.\n2. Select the PUBG environment (top-right).\n3. Run the collection, or send requests 1, 2, 3 in order.\n\nTo check another player, change playerName in the environment and run again. The season id and player id are found by requests 1 and 2.\n\nAuth (Bearer {{apiKey}}) is set on the collection. Each request has tests for the status code and the main response fields.\n\nplatform is steam by default. Other platforms: xbox, psn, kakao.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{apiKey}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.pubg.com", "type": "string" },
+    { "key": "seasonId", "value": "", "type": "string" },
+    { "key": "playerId", "value": "", "type": "string" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Stop early if the PUBG environment is not selected",
+          "if (!pm.variables.get('apiKey')) {",
+          "    throw new Error('apiKey is not set. Select the PUBG environment (top-right).');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "1 · Get current season",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Content-Type is JSON', () =>",
+              "    pm.expect(pm.response.headers.get('Content-Type')).to.include('json'));",
+              "",
+              "const seasons = pm.response.json().data;",
+              "pm.test('Season list is a non-empty array', () => {",
+              "    pm.expect(seasons).to.be.an('array').that.is.not.empty;",
+              "});",
+              "",
+              "const current = seasons.find(s => s.attributes && s.attributes.isCurrentSeason === true);",
+              "pm.test('Exactly one current season is flagged', () => {",
+              "    pm.expect(seasons.filter(s => s.attributes.isCurrentSeason)).to.have.lengthOf(1);",
+              "});",
+              "",
+              "// Save for request 3",
+              "pm.collectionVariables.set('seasonId', current.id);",
+              "console.log('Current season:', current.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Accept", "value": "application/vnd.api+json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/shards/{{platform}}/seasons",
+          "host": ["{{baseUrl}}"],
+          "path": ["shards", "{{platform}}", "seasons"]
+        },
+        "description": "Gets all seasons and saves the id of the current one (isCurrentSeason = true) to seasonId."
+      }
+    },
+    {
+      "name": "2 · Get player by name",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "",
+              "const players = pm.response.json().data;",
+              "pm.test('Player was found', () => {",
+              "    pm.expect(players, 'Player not found, check playerName and platform').to.be.an('array').that.is.not.empty;",
+              "});",
+              "",
+              "const player = players[0];",
+              "pm.test('Returned entity is a player', () => pm.expect(player.type).to.eql('player'));",
+              "pm.test('Name matches the requested playerName (case-insensitive)', () => {",
+              "    pm.expect(player.attributes.name.toLowerCase()).to.eql(String(pm.variables.get('playerName')).toLowerCase());",
+              "});",
+              "",
+              "// Save for request 3",
+              "pm.collectionVariables.set('playerId', player.id);",
+              "console.log('Player:', player.attributes.name, player.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Accept", "value": "application/vnd.api+json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/shards/{{platform}}/players?filter[playerNames]={{playerName}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["shards", "{{platform}}", "players"],
+          "query": [
+            { "key": "filter[playerNames]", "value": "{{playerName}}" }
+          ]
+        },
+        "description": "Finds the player by name (playerName from the environment) and saves the account id to playerId."
+      }
+    },
+    {
+      "name": "3 · Get ranked stats (current season)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Needs seasonId and playerId from requests 1 and 2",
+              "['seasonId', 'playerId'].forEach(v => {",
+              "    if (!pm.collectionVariables.get(v)) {",
+              "        throw new Error(v + ' is empty. Run requests 1 and 2 first (or use \\'Run collection\\').');",
+              "    }",
+              "});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "",
+              "const data = pm.response.json().data;",
+              "pm.test('Response is a ranked player stats entity', () => {",
+              "    pm.expect(String(data.type).toLowerCase()).to.eql('rankedplayerstats');",
+              "});",
+              "",
+              "const modes = data.attributes.rankedGameModeStats || {};",
+              "pm.test('rankedGameModeStats object is present', () => {",
+              "    pm.expect(data.attributes).to.have.property('rankedGameModeStats');",
+              "});",
+              "",
+              "// A player with no ranked games this season gets 200 with an empty object",
+              "if (Object.keys(modes).length === 0) {",
+              "    console.warn('No ranked games for ' + pm.variables.get('playerName') + ' in this season.');",
+              "} else {",
+              "    Object.entries(modes).forEach(([mode, s]) => {",
+              "        console.log(`[${mode}] tier=${s.currentTier && s.currentTier.tier} ${s.currentTier && s.currentTier.subTier} | RP=${s.currentRankPoint} | rounds=${s.roundsPlayed} | winRatio=${s.winRatio} | KDA=${s.kda}`);",
+              "    });",
+              "    pm.test('Each game mode exposes core ranked fields', () => {",
+              "        Object.values(modes).forEach(s => {",
+              "            pm.expect(s).to.have.property('currentTier');",
+              "            pm.expect(s).to.have.property('currentRankPoint');",
+              "            pm.expect(s).to.have.property('roundsPlayed');",
+              "        });",
+              "    });",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Accept", "value": "application/vnd.api+json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/shards/{{platform}}/players/{{playerId}}/seasons/{{seasonId}}/ranked",
+          "host": ["{{baseUrl}}"],
+          "path": ["shards", "{{platform}}", "players", "{{playerId}}", "seasons", "{{seasonId}}", "ranked"]
+        },
+        "description": "Ranked stats of the player for the current season, by game mode (for example squad, squad-fpp)."
+      }
+    }
+  ]
+}
